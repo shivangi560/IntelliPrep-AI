@@ -19,6 +19,12 @@ const Resume = require("./models/Resume");
 const Interview = require("./models/Interview");
 
 const app = express();
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "IntelliPrep AI API is running"
+  });
+});
 
 // -------------------- CONFIGURATION --------------------
 
@@ -1394,6 +1400,157 @@ app.get("/api/dashboard/summary", authMiddleware, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Could not fetch dashboard summary."
+    });
+  }
+});
+
+ // -------------------- USER PROFILE API --------------------
+
+app.get("/api/user/profile", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found."
+      });
+    }
+
+    return res.json({
+      success: true,
+      user
+    });
+
+  } catch (error) {
+    console.error("Fetch profile error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Could not load profile."
+    });
+  }
+});
+
+
+// -------------------- UPDATE USER PROFILE API --------------------
+
+app.put("/api/user/profile", authMiddleware, async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    if (!name?.trim() || !email?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and email are required."
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+      _id: { $ne: req.userId }
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already registered."
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.userId,
+      {
+        name: name.trim(),
+        email: normalizedEmail
+      },
+      {
+        new: true,
+        runValidators: true
+      }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found."
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Profile updated successfully!",
+      user: updatedUser
+    });
+
+  } catch (error) {
+    console.error("Update profile error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Profile update failed."
+    });
+  }
+});
+
+
+// -------------------- CHANGE PASSWORD API --------------------
+
+app.put("/api/user/change-password", authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Both passwords are required."
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must contain at least 8 characters."
+      });
+    }
+
+    const user = await User.findById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found."
+      });
+    }
+
+    const isMatch = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect."
+      });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Password changed successfully!"
+    });
+
+  } catch (error) {
+    console.error("Change password error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Password change failed."
     });
   }
 });
